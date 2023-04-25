@@ -1,1 +1,0 @@
-log icmp any any -> 139.91.81.138 any
