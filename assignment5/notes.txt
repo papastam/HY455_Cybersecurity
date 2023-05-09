@@ -1,0 +1,2 @@
+1. The key is the phrase "THEY_WILL_NEVER_FIND_THIS" using the same random number as the files 
+2. For each byte of the file, the encrypted byte is itself raised in a random power
