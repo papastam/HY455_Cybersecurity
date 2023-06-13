@@ -27,7 +27,7 @@ else
 fi
 
 echo "The calculated randomized alternator used is: $input"
-input=$(printf '%025g' "$input")
+input=$(printf '%g' "$input")
 echo "Trying code: $input"
 output=$(./wannabecry $input)
 echo $output
@@ -43,7 +43,7 @@ fi
 ############################
 ######## BRUTEFORCE ########
 ############################
-for code in $(seq -f "0000000000000000000000%02g" 1 95)
+for code in $(seq -f "%g" 1 95)
 do
 	echo "Trying out code: $code"
 	output=$(./wannabecry $code)
