@@ -3,15 +3,16 @@ import mysql.connector
 from datetime import datetime, timedelta
 from time import sleep
 
-# MySQL connection configuration
-mysql_config = {
-    'host': 'localhost',
-    'user': 'root',
-    'password': 'Pastroumas@123',
-    'database': 'cve_db'
-}
+# Database connection
+connection= None
+
 # NVD API URL
 nvd_api_url = 'https://services.nvd.nist.gov/rest/json/cves/2.0'
+
+# Counters
+count = 0
+failed = 0
+not_fetched = 0
 
 # Print failed CVE to file
 def print_failed_cve(cve_id,reason):
@@ -21,8 +22,7 @@ def print_failed_cve(cve_id,reason):
 # Function to initialize or recreate the CVEs table in the database
 def initialize_database():
     print("\033[34mInitializing database...\033[00m")
-    conn = mysql.connector.connect(**mysql_config)
-    cursor = conn.cursor()
+    cursor = connection.cursor()
 
     drop_table_query = "DROP TABLE IF EXISTS cves"
     cursor.execute(drop_table_query)
@@ -44,14 +44,16 @@ def initialize_database():
     cursor.execute(create_table_query)
 
     cursor.close()
-    conn.close()
 
 # Fetch CVEs from NVD API for the last 120 days
 def fetch_and_import_cves(start_date=datetime(1990,1,1,0,0,0,0), end_date=datetime.now()):
     print("\033[36mFetching CVEs from NVD API...\033[00m")
-    days_limit = timedelta(days=120)
+    days_limit = timedelta(days=100) #Not longer than 120 days
     itter_date = start_date
-    count = 0
+
+    global count
+    global failed
+    global not_fetched  
 
     while itter_date < end_date:
 
@@ -74,10 +76,13 @@ def fetch_and_import_cves(start_date=datetime(1990,1,1,0,0,0,0), end_date=dateti
         if response.status_code == 200:
             data = response.json()
             print(f"Got response with code {response.status_code}, results_per_page={data['resultsPerPage']}, start_index={data['startIndex']}, total_results={data ['totalResults']}")
+            
+            if data['totalResults'] > data["resultsPerPage"]:
+                not_fetched += data['totalResults'] - data["resultsPerPage"]
+
             if 'vulnerabilities' in data:
                 insert_cves(data['vulnerabilities'])
                 count += len(data['vulnerabilities'])
-
 
         elif response.status_code != 200 and "message" in response.headers:
             print(f"\033[31mError fetching CVEs: {response.headers['message']}\033[00m")
@@ -94,11 +99,13 @@ def fetch_and_import_cves(start_date=datetime(1990,1,1,0,0,0,0), end_date=dateti
 
 def insert_cves(cves):
     print("Inserting CVEs into the database...")
-    count=0
+    
+    global count
+    global failed
+
     for cve_ind in cves:
         try:
-            conn = mysql.connector.connect(**mysql_config)
-            cursor = conn.cursor()
+            cursor = connection.cursor()
 
             insert_query = "INSERT INTO cves (cve_id, source_identifier, published, last_modified, description, base_score, weaknesses, configurations, refs) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
 
@@ -109,9 +116,9 @@ def insert_cves(cves):
             last_modified       = cve['lastModified']
             description         = cve['descriptions'][0]["value"]
             
-            if "weaknesses" in cve:
+            try:
                 weaknesses          = str(cve['weaknesses'])
-            else:
+            except:
                 weaknesses          = None
 
             try:
@@ -119,9 +126,9 @@ def insert_cves(cves):
             except:
                 configurations      = None
 
-            if "references" in cve:
+            try:
                 referances          = str(cve['references'])
-            else:
+            except:
                 referances          = None
 
             if len(list(cve['metrics'].keys())) > 1:
@@ -135,20 +142,26 @@ def insert_cves(cves):
             values = (cve_id, source_identifier, published, last_modified, description, base_score, weaknesses, configurations, referances)
             cursor.execute(insert_query, values)
 
-            conn.commit()
+            connection.commit()
             cursor.close()
-            conn.close()
 
             count+=1
+        except mysql.connector.errors.OperationalError as e:
+            print("\033[31mError with MySQL connection, exiting...\033[00m")
+            return count
         except Exception as e:
             print(f"\033[31mError inserting CVE: {e}\033[00m")
             print(f"\033[93mSkipping CVE {cve_id}\033[00m")
             print_failed_cve(cve_id, e)
+            failed += 1
 
     return count
 
 # Main function
-def main():
+def import_NVDs(conn, start_date=datetime(1990,1,1,0,0,0,0), end_date=datetime.now()):
+    global connection 
+    connection = conn
+
     # Initialize database
     initialize_database()
 
@@ -156,7 +169,8 @@ def main():
     open('failed_CVE_imports.txt', 'w').close()
 
     # Fetch CVEs from NVD API and insert into database
-    fetch_and_import_cves()
+    fetch_and_import_cves(start_date, end_date)
 
-if __name__ == '__main__':
-    main()
+    print(f"\033[32m{count} CVEs imported into the database.\033[00m")
+    print(f"\033[31m{failed} CVEs failed to import.\033[00m")
+    print(f"\033[31m{not_fetched} CVEs not fetched.\033[00m")
