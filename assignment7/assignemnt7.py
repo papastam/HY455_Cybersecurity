@@ -8,10 +8,10 @@ import datetime
 from tabulate import tabulate
 
 db_config = {
-    'host': 'localhost',
-    'user': 'root',
-    'password': 'Pastroumas@123',
-    'database': 'cve_db'
+    'host': 'your_host',
+    'user': 'your_user',
+    'password': 'your_password',
+    'database': 'your_database'
 }
 
 # Connect to the database
